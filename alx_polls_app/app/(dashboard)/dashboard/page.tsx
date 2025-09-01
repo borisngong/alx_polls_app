@@ -1,3 +1,6 @@
+"use client";
+
+import withAuth from "@/components/withAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Poll } from "@/types"
@@ -23,7 +26,7 @@ const mockUserPolls: Poll[] = [
   }
 ]
 
-export default function DashboardPage() {
+function DashboardPage() {
   const totalPolls = mockUserPolls.length
   const totalVotes = mockUserPolls.reduce((sum, poll) => 
     sum + poll.options.reduce((pollSum, option) => pollSum + option.votes, 0), 0
@@ -90,7 +93,7 @@ export default function DashboardPage() {
               <Link href="/polls/create">
                 <Plus className="h-4 w-4 mr-2" />
                 Create New Poll
-              </Link>
+              </A </Link>
             </Button>
             <Button variant="outline" asChild>
               <Link href="/polls">View All Polls</Link>
@@ -135,3 +138,5 @@ export default function DashboardPage() {
     </div>
   )
 }
+
+export default withAuth(DashboardPage);

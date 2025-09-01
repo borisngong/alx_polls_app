@@ -1,75 +1,87 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CreatePollData } from "@/types"
-import { Plus, X } from "lucide-react"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Plus, X } from "lucide-react";
+import { createPoll } from "@/lib/actions/polls";
+import { createPollSchema, type CreatePollFormData } from "@/lib/schemas";
 
 export function CreatePollForm() {
-  const [formData, setFormData] = useState<CreatePollData>({
-    title: "",
-    description: "",
-    options: ["", ""],
-    expiresAt: undefined
-  })
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  const form = useForm<CreatePollFormData>({
+    resolver: zodResolver(createPollSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      options: [{ value: "" }, { value: "" }],
+      expiresAt: "",
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "options",
+  });
 
   const addOption = () => {
-    setFormData(prev => ({
-      ...prev,
-      options: [...prev.options, ""]
-    }))
-  }
+    if (fields.length < 10) {
+      append({ value: "" });
+    }
+  };
 
   const removeOption = (index: number) => {
-    if (formData.options.length <= 2) return
-    setFormData(prev => ({
-      ...prev,
-      options: prev.options.filter((_, i) => i !== index)
-    }))
-  }
-
-  const updateOption = (index: number, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      options: prev.options.map((option, i) => i === index ? value : option)
-    }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    
-    // Validate form
-    if (formData.title.trim() === "") {
-      alert("Please enter a poll title")
-      setIsLoading(false)
-      return
+    if (fields.length > 2) {
+      remove(index);
     }
-    
-    if (formData.options.some(option => option.trim() === "")) {
-      alert("Please fill in all poll options")
-      setIsLoading(false)
-      return
+  };
+
+  const handleSubmit = async (data: CreatePollFormData) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("title", data.title);
+      if (data.description) {
+        formData.append("description", data.description);
+      }
+      data.options.forEach((option) => {
+        formData.append("options", option.value);
+      });
+      if (data.expiresAt) {
+        formData.append("expiresAt", data.expiresAt);
+      }
+
+      const result = await createPoll(formData);
+
+      if (result.success) {
+        // Reset form
+        form.reset();
+        // Redirect to the created poll
+        router.push(`/polls/${result.poll.id}`);
+      } else {
+        setError(result.error || "Failed to create poll");
+      }
+    } catch (err) {
+      setError("An unexpected error occurred");
+    } finally {
+      setIsLoading(false);
     }
-    
-    // TODO: Implement poll creation logic
-    console.log("Creating poll:", formData)
-    
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false)
-      // Reset form
-      setFormData({
-        title: "",
-        description: "",
-        options: ["", ""],
-        expiresAt: undefined
-      })
-    }, 1000)
-  }
+  };
 
   return (
     <Card className="w-full max-w-2xl">
@@ -80,7 +92,16 @@ export function CreatePollForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+          {error && (
+            <div
+              className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+              role="alert"
+            >
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+
           <div className="space-y-2">
             <label htmlFor="title" className="text-sm font-medium">
               Poll Title *
@@ -88,12 +109,15 @@ export function CreatePollForm() {
             <Input
               id="title"
               placeholder="What would you like to ask?"
-              value={formData.title}
-              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-              required
+              {...form.register("title")}
             />
+            {form.formState.errors.title && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.title.message}
+              </p>
+            )}
           </div>
-          
+
           <div className="space-y-2">
             <label htmlFor="description" className="text-sm font-medium">
               Description (optional)
@@ -101,25 +125,32 @@ export function CreatePollForm() {
             <Input
               id="description"
               placeholder="Add more context to your poll"
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              {...form.register("description")}
             />
+            {form.formState.errors.description && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.description.message}
+              </p>
+            )}
           </div>
-          
+
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Poll Options *
-            </label>
+            <label className="text-sm font-medium">Poll Options *</label>
             <div className="space-y-3">
-              {formData.options.map((option, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    placeholder={`Option ${index + 1}`}
-                    value={option}
-                    onChange={(e) => updateOption(index, e.target.value)}
-                    required
-                  />
-                  {formData.options.length > 2 && (
+              {fields.map((field, index) => (
+                <div key={field.id} className="flex items-start gap-2">
+                  <div className="flex-grow">
+                    <Input
+                      placeholder={`Option ${index + 1}`}
+                      {...form.register(`options.${index}.value` as const)}
+                    />
+                    {form.formState.errors.options?.[index]?.value && (
+                      <p className="text-sm text-red-600 mt-1">
+                        {form.formState.errors.options[index].value.message}
+                      </p>
+                    )}
+                  </div>
+                  {fields.length > 2 && (
                     <Button
                       type="button"
                       variant="outline"
@@ -132,18 +163,25 @@ export function CreatePollForm() {
                 </div>
               ))}
             </div>
+            {form.formState.errors.options &&
+              !form.formState.errors.options.length && (
+                <p className="text-sm text-red-600">
+                  {form.formState.errors.options.message}
+                </p>
+              )}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={addOption}
+              disabled={fields.length >= 10}
               className="mt-2"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Option
             </Button>
           </div>
-          
+
           <div className="space-y-2">
             <label htmlFor="expiresAt" className="text-sm font-medium">
               Expiration Date (optional)
@@ -151,19 +189,20 @@ export function CreatePollForm() {
             <Input
               id="expiresAt"
               type="datetime-local"
-              value={formData.expiresAt || ""}
-              onChange={(e) => setFormData(prev => ({ 
-                ...prev, 
-                expiresAt: e.target.value || undefined 
-              }))}
+              {...form.register("expiresAt")}
             />
+            {form.formState.errors.expiresAt && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.expiresAt.message}
+              </p>
+            )}
           </div>
-          
+
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? "Creating Poll..." : "Create Poll"}
           </Button>
         </form>
       </CardContent>
     </Card>
-  )
+  );
 }

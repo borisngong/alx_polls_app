@@ -19,10 +19,10 @@ const mockUserPolls: Poll[] = [
       { id: "1-3", text: "Java", votes: 22 },
       { id: "1-4", text: "C++", votes: 15 }
     ],
-    createdBy: "user1",
-    isActive: true,
-    createdAt: new Date("2024-01-15"),
-    updatedAt: new Date("2024-01-15")
+    created_by: "user1",
+    is_active: true,
+    created_at: new Date("2024-01-15"),
+    updated_at: new Date("2024-01-15")
   }
 ]
 
@@ -73,7 +73,7 @@ function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockUserPolls.filter(p => p.isActive).length}</div>
+            <div className="text-2xl font-bold">{mockUserPolls.filter(p => p.is_active).length}</div>
             <p className="text-xs text-muted-foreground">
               Currently running
             </p>
@@ -93,7 +93,7 @@ function DashboardPage() {
               <Link href="/polls/create">
                 <Plus className="h-4 w-4 mr-2" />
                 Create New Poll
-              </A </Link>
+              </Link>
             </Button>
             <Button variant="outline" asChild>
               <Link href="/polls">View All Polls</Link>

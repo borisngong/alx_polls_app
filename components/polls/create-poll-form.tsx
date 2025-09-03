@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,7 @@ import { createPollSchema, type CreatePollFormData } from "@/lib/schemas";
 export function CreatePollForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [success, setSuccess] = useState<string | null>(null);
 
   const form = useForm<CreatePollFormData>({
     resolver: zodResolver(createPollSchema),
@@ -32,7 +31,7 @@ export function CreatePollForm() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove } = useFieldArray<CreatePollFormData>({
     control: form.control,
     name: "options",
   });
@@ -43,15 +42,11 @@ export function CreatePollForm() {
     }
   };
 
-  const removeOption = (index: number) => {
-    if (fields.length > 2) {
-      remove(index);
-    }
-  };
-
   const handleSubmit = async (data: CreatePollFormData) => {
+    console.log("Form submitted with data:", data);
     setIsLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const formData = new FormData();
@@ -66,17 +61,32 @@ export function CreatePollForm() {
         formData.append("expiresAt", data.expiresAt);
       }
 
+      console.log("FormData created:", {
+        title: formData.get("title"),
+        description: formData.get("description"),
+        options: formData.getAll("options"),
+        expiresAt: formData.get("expiresAt"),
+      });
+
       const result = await createPoll(formData);
+      console.log("Server Action result:", result);
 
       if (result.success) {
+        // Show success message
+        setSuccess("✅ Poll created successfully!");
+
         // Reset form
         form.reset();
-        // Redirect to the created poll
-        router.push(`/polls/${result.poll.id}`);
+
+        // Hide success message after 3 seconds
+        setTimeout(() => {
+          setSuccess(null);
+        }, 3000);
       } else {
         setError(result.error || "Failed to create poll");
       }
     } catch (err) {
+      console.error("Form submission error:", err);
       setError("An unexpected error occurred");
     } finally {
       setIsLoading(false);
@@ -99,6 +109,14 @@ export function CreatePollForm() {
               role="alert"
             >
               <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+          {success && (
+            <div
+              className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative"
+              role="alert"
+            >
+              <span className="block sm:inline">{success}</span>
             </div>
           )}
 
@@ -155,7 +173,7 @@ export function CreatePollForm() {
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => removeOption(index)}
+                      onClick={() => remove(index)}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -163,12 +181,11 @@ export function CreatePollForm() {
                 </div>
               ))}
             </div>
-            {form.formState.errors.options &&
-              !form.formState.errors.options.length && (
-                <p className="text-sm text-red-600">
-                  {form.formState.errors.options.message}
-                </p>
-              )}
+            {form.formState.errors.options?.message && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.options.message}
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"

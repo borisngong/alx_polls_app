@@ -11,7 +11,7 @@ interface PollCardProps {
 }
 
 export function PollCard({ poll, onVote }: PollCardProps) {
-  const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0)
+  const totalVotes = poll.options?.reduce((sum, option) => sum + option.votes, 0) || 0
   
   const handleVote = (optionId: string) => {
     if (onVote) {
@@ -27,39 +27,47 @@ export function PollCard({ poll, onVote }: PollCardProps) {
           <CardDescription>{poll.description}</CardDescription>
         )}
         <div className="text-sm text-muted-foreground">
-          {totalVotes} votes • Created {new Date(poll.createdAt).toLocaleDateString()}
+          {totalVotes} votes • Created {new Date(poll.created_at).toLocaleDateString()}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          {poll.options.map((option) => {
-            const percentage = totalVotes > 0 ? (option.votes / totalVotes) * 100 : 0
-            return (
-              <div key={option.id} className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{option.text}</span>
-                  <span className="text-sm text-muted-foreground">
-                    {option.votes} votes ({percentage.toFixed(1)}%)
-                  </span>
+        {poll.options && poll.options.length > 0 ? (
+          <div className="space-y-2">
+            {poll.options.map((option) => {
+              const percentage = totalVotes > 0 ? (option.votes / totalVotes) * 100 : 0
+              return (
+                <div key={option.id} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{option.text}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {option.votes} votes ({percentage.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${percentage}%` }}
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-4 text-gray-500">
+            No options available
+          </div>
+        )}
         <div className="flex gap-2">
-          <Button 
-            onClick={() => handleVote(poll.options[0]?.id || "")}
-            variant="outline"
-            size="sm"
-          >
-            Vote
-          </Button>
+          {poll.options && poll.options.length > 0 && (
+            <Button 
+              onClick={() => handleVote(poll.options[0]?.id || "")}
+              variant="outline"
+              size="sm"
+            >
+              Vote
+            </Button>
+          )}
           <Button asChild variant="outline" size="sm">
             <Link href={`/polls/${poll.id}`}>View Details</Link>
           </Button>

@@ -3,6 +3,8 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
 export default function CreatePollPage() {
+  console.log("Create poll page loaded!")
+  
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -18,6 +20,10 @@ export default function CreatePollPage() {
           <p className="text-gray-600 mt-2">
             Create engaging polls for your community to vote on
           </p>
+        </div>
+        
+        <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+          ✅ Create Poll Page Loaded Successfully!
         </div>
         
         <CreatePollForm />

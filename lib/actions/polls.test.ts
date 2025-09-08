@@ -1,272 +1,185 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createPoll, getPolls } from "./polls";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import {
+  createPollAction,
+  getPollsAction,
+  getPollDetailsAction,
+  submitVoteAction,
+  FormState,
+} from "./polls";
+import { getAuthenticatedUser } from "@/lib/auth-utils";
+import {
+  createPollTransaction,
+  getPollsWithVoteCounts,
+  getPollDetails,
+  castVote,
+} from "@/lib/poll-service";
 import { revalidatePath } from "next/cache";
 
-// Mock dependencies
-vi.mock("@supabase/auth-helpers-nextjs", () => ({
-  createServerComponentClient: vi.fn(),
+vi.mock("@/lib/auth-utils", () => ({
+  getAuthenticatedUser: vi.fn(),
 }));
 
+
+// Mock dependencies
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-vi.mock("next/headers", () => ({
-  cookies: vi.fn(() =>
-    Promise.resolve({
-      get: vi.fn(),
-      set: vi.fn(),
-      delete: vi.fn(),
-    })
-  ),
+vi.mock("@/lib/poll-service", () => ({
+  createPollTransaction: vi.fn(),
+  getPollsWithVoteCounts: vi.fn(),
+  getPollDetails: vi.fn(),
+  castVote: vi.fn(),
 }));
 
-describe("Poll Actions", () => {
+const initialState: FormState = {
+  success: false,
+  message: "",
+};
+
+describe("Poll Server Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("createPoll", () => {
-    it("should create a poll successfully with valid data", async () => {
+  describe("createPollAction", () => {
+    beforeEach(() => {
+      (getAuthenticatedUser as vi.Mock).mockResolvedValue({ id: "user-1" });
+    });
+
+    it("should return an unauthorized error if the user is not logged in", async () => {
+      (getAuthenticatedUser as vi.Mock).mockResolvedValue(null);
       const formData = new FormData();
-      formData.append("title", "Favorite Programming Language?");
-      formData.append(
-        "description",
-        "Choose your favorite programming language"
-      );
+      formData.append("title", "Favorite Language?");
       formData.append("options", "TypeScript");
       formData.append("options", "Python");
-      formData.append("options", "JavaScript");
 
-      const mockPollData = {
-        id: "123",
-        title: "Favorite Programming Language?",
-        description: "Choose your favorite programming language",
-        created_by: "00000000-0000-0000-0000-000000000001",
-        expires_at: null,
-        is_active: true,
-      };
+      const result = await createPollAction(initialState, formData);
 
-      // Create mock for poll creation chain
-      const mockSupabase = {
-        from: vi.fn(() => ({
-          insert: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn().mockResolvedValueOnce({
-                data: mockPollData,
-                error: null,
-              }),
-            })),
-          })),
-        })),
-      };
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Unauthorized");
+    });
+    
+    it("should create a poll successfully with valid data", async () => {
+      const formData = new FormData();
+      formData.append("title", "Favorite Language?");
+      formData.append("options", "TypeScript");
+      formData.append("options", "Python");
 
-      // Create separate mock for options creation
-      const mockOptionsInsert = {
-        insert: vi.fn().mockResolvedValueOnce({ error: null }),
-      };
+      const mockPoll = { id: "poll-1", title: "Favorite Language?" };
+      const mockPoll = { id: "poll-1", title: "Favorite Language?" };
+      (createPollTransaction as vi.Mock).mockResolvedValue({
+        success: true,
+        poll: mockPoll,
+      });
 
-      mockSupabase.from
-        .mockReturnValueOnce(mockSupabase.from())
-        .mockReturnValueOnce(mockOptionsInsert);
-
-      (createServerComponentClient as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockSupabase
-      );
-
-      const result = await createPoll(formData);
+      const result = await createPollAction(initialState, formData);
+      console.log(result);
 
       expect(result.success).toBe(true);
-      expect(result.poll).toEqual(mockPollData);
+      expect(result.message).toBe("Poll created successfully!");
+      expect(result.pollId).toBe("poll-1");
       expect(revalidatePath).toHaveBeenCalledWith("/polls");
       expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
     });
 
-    it("should return an error if the poll title is missing", async () => {
+    it("should return a validation error for invalid data", async () => {
       const formData = new FormData();
-      formData.append("options", "Yes");
-      formData.append("options", "No");
+      formData.append("title", ""); // Invalid title
+      formData.append("options", "TypeScript");
 
-      const result = await createPoll(formData);
+      const result = await createPollAction(initialState, formData);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe("Poll title is required");
+      expect(result.message).toBe("Validation failed.");
+      expect(result.errors?.title).toBeDefined();
     });
 
-    it("should return an error if there are fewer than 2 options", async () => {
+    it("should handle errors from the poll service", async () => {
       const formData = new FormData();
       formData.append("title", "Test Poll");
-      formData.append("options", "Only One Option");
-
-      const result = await createPoll(formData);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("At least 2 poll options are required");
-    });
-
-    it("should return an error if there are empty options", async () => {
-      const formData = new FormData();
-      formData.append("title", "Test Poll");
-      formData.append("options", "Option 1");
-      formData.append("options", "");
-
-      const result = await createPoll(formData);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("At least 2 poll options are required");
-    });
-
-    it("should handle expires_at date correctly", async () => {
-      const formData = new FormData();
-      formData.append("title", "Timed Poll");
       formData.append("options", "Option 1");
       formData.append("options", "Option 2");
-      formData.append("expiresAt", "2025-12-31T23:59:59");
 
-      const mockPollData = {
-        id: "456",
-        title: "Timed Poll",
-        expires_at: "2025-12-31T23:59:59.000Z",
-      };
+      (createPollTransaction as vi.Mock).mockResolvedValue({
+        success: false,
+        error: "Database error",
+      });
 
-      // Create mock for poll creation chain
-      const mockSupabase = {
-        from: vi.fn(() => ({
-          insert: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn().mockResolvedValueOnce({
-                data: mockPollData,
-                error: null,
-              }),
-            })),
-          })),
-        })),
-      };
+      const result = await createPollAction(initialState, formData);
 
-      // Create separate mock for options creation
-      const mockOptionsInsert = {
-        insert: vi.fn().mockResolvedValueOnce({ error: null }),
-      };
-
-      mockSupabase.from
-        .mockReturnValueOnce(mockSupabase.from())
-        .mockReturnValueOnce(mockOptionsInsert);
-
-      (createServerComponentClient as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockSupabase
-      );
-
-      const result = await createPoll(formData);
-
-      expect(result.success).toBe(true);
-      expect(result.poll?.expires_at).toBe("2025-12-31T23:59:59.000Z");
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Database error");
     });
   });
 
-  describe("getPolls", () => {
-    it("should fetch polls with options successfully", async () => {
-      const mockPolls = [
-        {
-          id: "1",
-          title: "Poll 1",
-          description: "First poll",
-          is_active: true,
-          created_at: "2025-01-01T00:00:00Z",
-        },
-      ];
-
-      const mockOptions = [
-        { id: "1", poll_id: "1", text: "Option A", votes: 5 },
-        { id: "2", poll_id: "1", text: "Option B", votes: 3 },
-      ];
-
-      const mockSupabase = {
-        from: vi
-          .fn()
-          .mockReturnValueOnce({
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                order: vi.fn().mockResolvedValueOnce({
-                  data: mockPolls,
-                  error: null,
-                }),
-              })),
-            })),
-          })
-          .mockReturnValueOnce({
-            select: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValueOnce({
-                data: mockOptions,
-                error: null,
-              }),
-            })),
-          }),
-      };
-
-      (createServerComponentClient as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockSupabase
-      );
-
-      const result = await getPolls();
-
-      expect(result.success).toBe(true);
-      expect(result.polls).toHaveLength(1);
-      expect(result.polls[0]).toEqual({
-        ...mockPolls[0],
-        options: mockOptions,
+  describe("getPollsAction", () => {
+    it("should fetch polls successfully", async () => {
+      const mockPolls = [{ id: "poll-1", title: "Poll 1" }];
+      (getPollsWithVoteCounts as vi.Mock).mockResolvedValue({
+        polls: mockPolls,
+        error: null,
       });
+
+      const result = await getPollsAction();
+
+      expect(result.polls).toEqual(mockPolls);
+    });
+  });
+
+  describe("getPollDetailsAction", () => {
+    it("should fetch poll details successfully", async () => {
+      const mockPoll = { id: "poll-1", title: "Poll 1" };
+      (getPollDetails as vi.Mock).mockResolvedValue({
+        poll: mockPoll,
+        error: null,
+      });
+
+      const result = await getPollDetailsAction("poll-1");
+
+      expect(result.poll).toEqual(mockPoll);
+    });
+  });
+
+  describe("submitVoteAction", () => {
+    beforeEach(() => {
+      (getAuthenticatedUser as vi.Mock).mockResolvedValue({ id: "user-1" });
     });
 
-    it("should return empty array when no polls exist", async () => {
-      const mockSupabase = {
-        from: vi.fn(() => ({
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              order: vi.fn().mockResolvedValueOnce({
-                data: [],
-                error: null,
-              }),
-            })),
-          })),
-        })),
-      };
-
-      (createServerComponentClient as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockSupabase
-      );
-
-      const result = await getPolls();
-
-      expect(result.success).toBe(true);
-      expect(result.polls).toEqual([]);
-    });
-
-    it("should handle database errors gracefully", async () => {
-      const mockError = { message: "Connection failed" };
-
-      const mockSupabase = {
-        from: vi.fn(() => ({
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              order: vi.fn().mockResolvedValueOnce({
-                data: null,
-                error: mockError,
-              }),
-            })),
-          })),
-        })),
-      };
-
-      (createServerComponentClient as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockSupabase
-      );
-
-      const result = await getPolls();
+    it("should return an unauthorized error if the user is not logged in", async () => {
+      (getAuthenticatedUser as vi.Mock).mockResolvedValue(null);
+      const result = await submitVoteAction("poll-1", "option-1");
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe("Connection failed");
-      expect(result.polls).toEqual([]);
+      expect(result.message).toContain("Unauthorized");
+    });
+
+    it("should submit a vote successfully", async () => {
+      (castVote as vi.Mock).mockResolvedValue({ error: null });
+
+      const result = await submitVoteAction("poll-1", "option-1");
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe("Vote submitted successfully!");
+      expect(revalidatePath).toHaveBeenCalledWith("/polls/poll-1");
+    });
+
+    it("should return an error if no option is selected", async () => {
+      const result = await submitVoteAction("poll-1", "");
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Please select an option to vote.");
+    });
+
+    it("should handle errors from the vote service", async () => {
+      (castVote as vi.Mock).mockResolvedValue({
+        error: { message: "Voting failed" },
+      });
+
+      const result = await submitVoteAction("poll-1", "option-1");
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Voting failed");
     });
   });
 });

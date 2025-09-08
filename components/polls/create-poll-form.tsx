@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useEffect } from "react";
+import { useFormState, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,13 +13,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Plus, X } from "lucide-react";
-import { createPoll } from "@/lib/actions/polls";
+import { createPollAction, FormState } from "@/lib/actions/polls";
 import { createPollSchema, type CreatePollFormData } from "@/lib/schemas";
+import { useFieldArray } from "react-hook-form";
+import { useRouter } from "next/navigation";
+
+const initialState: FormState = {
+  success: false,
+  message: "",
+};
 
 export function CreatePollForm() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [state, formAction] = useFormState(createPollAction, initialState);
+  const router = useRouter();
 
   const form = useForm<CreatePollFormData>({
     resolver: zodResolver(createPollSchema),
@@ -36,60 +42,15 @@ export function CreatePollForm() {
     name: "options",
   });
 
+  useEffect(() => {
+    if (state.success && state.pollId) {
+      router.push(`/polls/${state.pollId}`);
+    }
+  }, [state, router]);
+
   const addOption = () => {
     if (fields.length < 10) {
       append({ value: "" });
-    }
-  };
-
-  const handleSubmit = async (data: CreatePollFormData) => {
-    console.log("Form submitted with data:", data);
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("title", data.title);
-      if (data.description) {
-        formData.append("description", data.description);
-      }
-      data.options.forEach((option) => {
-        formData.append("options", option.value);
-      });
-      if (data.expiresAt) {
-        formData.append("expiresAt", data.expiresAt);
-      }
-
-      console.log("FormData created:", {
-        title: formData.get("title"),
-        description: formData.get("description"),
-        options: formData.getAll("options"),
-        expiresAt: formData.get("expiresAt"),
-      });
-
-      const result = await createPoll(formData);
-      console.log("Server Action result:", result);
-
-      if (result.success) {
-        // Show success message
-        setSuccess("✅ Poll created successfully!");
-
-        // Reset form
-        form.reset();
-
-        // Hide success message after 3 seconds
-        setTimeout(() => {
-          setSuccess(null);
-        }, 3000);
-      } else {
-        setError(result.error || "Failed to create poll");
-      }
-    } catch (err) {
-      console.error("Form submission error:", err);
-      setError("An unexpected error occurred");
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -102,21 +63,13 @@ export function CreatePollForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-          {error && (
+        <form action={formAction} className="space-y-6">
+          {!state.success && state.message && (
             <div
               className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
               role="alert"
             >
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-          {success && (
-            <div
-              className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative"
-              role="alert"
-            >
-              <span className="block sm:inline">{success}</span>
+              <span className="block sm:inline">{state.message}</span>
             </div>
           )}
 
@@ -126,13 +79,11 @@ export function CreatePollForm() {
             </label>
             <Input
               id="title"
+              name="title"
               placeholder="What would you like to ask?"
-              {...form.register("title")}
             />
-            {form.formState.errors.title && (
-              <p className="text-sm text-red-600">
-                {form.formState.errors.title.message}
-              </p>
+            {state.errors?.title && (
+              <p className="text-sm text-red-600">{state.errors.title[0]}</p>
             )}
           </div>
 
@@ -142,14 +93,9 @@ export function CreatePollForm() {
             </label>
             <Input
               id="description"
+              name="description"
               placeholder="Add more context to your poll"
-              {...form.register("description")}
             />
-            {form.formState.errors.description && (
-              <p className="text-sm text-red-600">
-                {form.formState.errors.description.message}
-              </p>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -159,14 +105,10 @@ export function CreatePollForm() {
                 <div key={field.id} className="flex items-start gap-2">
                   <div className="flex-grow">
                     <Input
+                      name="options"
                       placeholder={`Option ${index + 1}`}
-                      {...form.register(`options.${index}.value` as const)}
+                      defaultValue={field.value}
                     />
-                    {form.formState.errors.options?.[index]?.value && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {form.formState.errors.options[index].value.message}
-                      </p>
-                    )}
                   </div>
                   {fields.length > 2 && (
                     <Button
@@ -181,9 +123,9 @@ export function CreatePollForm() {
                 </div>
               ))}
             </div>
-            {form.formState.errors.options?.message && (
+            {state.errors?.options && (
               <p className="text-sm text-red-600">
-                {form.formState.errors.options.message}
+                {state.errors.options[0]}
               </p>
             )}
             <Button
@@ -203,20 +145,11 @@ export function CreatePollForm() {
             <label htmlFor="expiresAt" className="text-sm font-medium">
               Expiration Date (optional)
             </label>
-            <Input
-              id="expiresAt"
-              type="datetime-local"
-              {...form.register("expiresAt")}
-            />
-            {form.formState.errors.expiresAt && (
-              <p className="text-sm text-red-600">
-                {form.formState.errors.expiresAt.message}
-              </p>
-            )}
+            <Input id="expiresAt" name="expiresAt" type="datetime-local" />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Creating Poll..." : "Create Poll"}
+          <Button type="submit" className="w-full">
+            Create Poll
           </Button>
         </form>
       </CardContent>
